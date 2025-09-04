@@ -1,43 +1,40 @@
 const { ytmp3 } = require('sadaslk-dlcore');
-const { cmd } = require('../command'); // oyage command handler
+const { cmd } = require('../command'); // your command handler
 const fs = require('fs');
 const axios = require('axios');
 const path = require('path');
 
 cmd({
-  pattern: "yy",
-  alias: ["ytmp3"],
+  pattern: "song",
   desc: "Download YouTube song as MP3",
-  category: "download",
-  use: ".song <youtube-url or query>",
+  category: "Download",
+  react: "😒",
+  use: ".song <YouTube URL or query>"
 }, async (conn, m, { args }) => {
   try {
-    if (!args[0]) return m.reply("❌ Please provide a YouTube link or search query!");
+    if (!args[0]) return m.reply("❌ Please provide a YouTube URL!");
 
-    let url = args[0];
-    m.reply("⏳ Downloading your song, please wait...");
+    const url = args[0];
+    m.reply("⏳ Downloading your song...");
 
-    // Get mp3 data
     const mp3 = await ytmp3(url);
-    if (!mp3 || !mp3.download) return m.reply("❌ Failed to fetch download link!");
+    if (!mp3 || !mp3.download) return m.reply("❌ Failed to get download link.");
 
-    // Download audio file
-    const filePath = path.join(__dirname, "../temp/" + Date.now() + ".mp3");
-    const response = await axios({
-      url: mp3.download,
-      method: "GET",
-      responseType: "arraybuffer"
-    });
-    fs.writeFileSync(filePath, response.data);
+    // Download the audio
+    const tempPath = path.join(__dirname, "../temp", Date.now() + ".mp3");
+    const response = await axios.get(mp3.download, { responseType: "arraybuffer" });
+    fs.writeFileSync(tempPath, response.data);
 
-    // Send as audio
+    // Send audio to WhatsApp
     await conn.sendMessage(m.chat, {
-      audio: fs.readFileSync(filePath),
+      audio: fs.readFileSync(tempPath),
       mimetype: "audio/mpeg",
-      fileName: `${mp3.title}.mp3`,
+      fileName: `${mp3.title}.mp3`
     }, { quoted: m });
 
-    fs.unlinkSync(filePath);
+    // Delete temp file
+    fs.unlinkSync(tempPath);
+
   } catch (err) {
     console.error(err);
     m.reply("⚠️ Error: " + err.message);

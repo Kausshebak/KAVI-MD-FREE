@@ -1,39 +1,44 @@
 const { ytmp3 } = require('sadaslk-dlcore');
-const { cmd, commands } = require('../command'); // your command handler
+const { cmd } = require('../command'); // your command handler
 const fs = require('fs');
 const axios = require('axios');
 const path = require('path');
+
+// Ensure temp folder exists
+const tempDir = path.join(__dirname, "../temp");
+if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
 cmd({
   pattern: "yy",
   desc: "Download YouTube song as MP3",
   category: "Download",
-  react: "😒",
-  use: ".song <YouTube URL or query>"
+  use: ".song <YouTube URL>"
 }, async (conn, m, { args }) => {
   try {
-    if (!args[0]) return m.reply("❌ Please provide a YouTube URL!");
+    // Check args safely
+    if (!args || !args[0]) return m.reply("❌ Please provide a YouTube URL!");
 
-    const url = args[0];
+    const url = args[0].trim();
     m.reply("⏳ Downloading your song...");
 
+    // Fetch mp3 info
     const mp3 = await ytmp3(url);
     if (!mp3 || !mp3.download) return m.reply("❌ Failed to get download link.");
 
-    // Download the audio
-    const tempPath = path.join(__dirname, "../temp", Date.now() + ".mp3");
+    // Download audio file
+    const filePath = path.join(tempDir, `${Date.now()}.mp3`);
     const response = await axios.get(mp3.download, { responseType: "arraybuffer" });
-    fs.writeFileSync(tempPath, response.data);
+    fs.writeFileSync(filePath, response.data);
 
     // Send audio to WhatsApp
     await conn.sendMessage(m.chat, {
-      audio: fs.readFileSync(tempPath),
+      audio: fs.readFileSync(filePath),
       mimetype: "audio/mpeg",
       fileName: `${mp3.title}.mp3`
     }, { quoted: m });
 
     // Delete temp file
-    fs.unlinkSync(tempPath);
+    fs.unlinkSync(filePath);
 
   } catch (err) {
     console.error(err);

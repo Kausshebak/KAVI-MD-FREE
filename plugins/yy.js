@@ -1,47 +1,60 @@
-const { ytmp3 } = require('sadaslk-dlcore');
-const { cmd } = require('../command'); // your command handler
-const fs = require('fs');
-const axios = require('axios');
-const path = require('path');
-
-// Ensure temp folder exists
-const tempDir = path.join(__dirname, "../temp");
-if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+const { cmd, commands } = require('../command'); // Your command handler
+const { ytmp3, ytmp4, tiktok, facebook, instagram, twitter } = require('sadaslk-dlcore');
 
 cmd({
-  pattern: "yy",
-  desc: "Download YouTube song as MP3",
-  category: "Download",
-  use: ".song <YouTube URL>"
-}, async (conn, m, { args }) => {
-  try {
-    // Check args safely
-    if (!args || !args[0]) return m.reply("❌ Please provide a YouTube URL!");
+    pattern: 'download ?(.*)',
+    fromMe: true, // true if only bot owner can use
+    desc: 'Download media from YouTube, TikTok, Facebook, Instagram, Twitter',
+    type: 'download',
+    async handler(message, match) {
+        if (!match) return await message.reply('Please provide a URL.');
 
-    const url = args[0].trim();
-    m.reply("⏳ Downloading your song...");
+        let url = match.trim();
+        let result;
 
-    // Fetch mp3 info
-    const mp3 = await ytmp3(url);
-    if (!mp3 || !mp3.download) return m.reply("❌ Failed to get download link.");
-
-    // Download audio file
-    const filePath = path.join(tempDir, `${Date.now()}.mp3`);
-    const response = await axios.get(mp3.download, { responseType: "arraybuffer" });
-    fs.writeFileSync(filePath, response.data);
-
-    // Send audio to WhatsApp
-    await conn.sendMessage(m.chat, {
-      audio: fs.readFileSync(filePath),
-      mimetype: "audio/mpeg",
-      fileName: `${mp3.title}.mp3`
-    }, { quoted: m });
-
-    // Delete temp file
-    fs.unlinkSync(filePath);
-
-  } catch (err) {
-    console.error(err);
-    m.reply("⚠️ Error: " + err.message);
-  }
+        try {
+            if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                // YouTube MP3
+                result = await ytmp3(url);
+                await message.sendMessage({
+                    audio: { url: result.url },
+                    mimetype: 'audio/mpeg',
+                    fileName: `${result.title}.mp3`
+                });
+            } else if (url.includes('facebook.com')) {
+                result = await facebook(url);
+                await message.sendMessage({
+                    video: { url: result.url },
+                    mimetype: 'video/mp4',
+                    fileName: `${result.title}.mp4`
+                });
+            } else if (url.includes('tiktok.com')) {
+                result = await tiktok(url);
+                await message.sendMessage({
+                    video: { url: result.url },
+                    mimetype: 'video/mp4',
+                    fileName: `${result.author}.mp4`
+                });
+            } else if (url.includes('instagram.com')) {
+                result = await instagram(url);
+                await message.sendMessage({
+                    video: { url: result.url },
+                    mimetype: 'video/mp4',
+                    fileName: `${result.username}.mp4`
+                });
+            } else if (url.includes('twitter.com')) {
+                result = await twitter(url);
+                await message.sendMessage({
+                    video: { url: result.url },
+                    mimetype: 'video/mp4',
+                    fileName: `${result.username}.mp4`
+                });
+            } else {
+                return await message.reply('Unsupported URL.');
+            }
+        } catch (e) {
+            console.error(e);
+            await message.reply('Failed to download media. Maybe the URL is invalid or unsupported.');
+        }
+    }
 });

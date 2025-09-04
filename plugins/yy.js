@@ -2,7 +2,7 @@ const { cmd, commands } = require('../command'); // Your command handler
 const { ytmp3, ytmp4, tiktok, facebook, instagram, twitter } = require('sadaslk-dlcore');
 
 cmd({
-    pattern: 'download ?(.*)',
+    pattern: 'download',
     fromMe: true, // true if only bot owner can use
     desc: 'Download media from YouTube, TikTok, Facebook, Instagram, Twitter',
     type: 'download',

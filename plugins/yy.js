@@ -1,11 +1,11 @@
 const { ytmp3 } = require('sadaslk-dlcore');
-const { cmd } = require('../command'); // your command handler
+const { cmd, commands } = require('../command'); // your command handler
 const fs = require('fs');
 const axios = require('axios');
 const path = require('path');
 
 cmd({
-  pattern: "song",
+  pattern: "yy",
   desc: "Download YouTube song as MP3",
   category: "Download",
   react: "😒",

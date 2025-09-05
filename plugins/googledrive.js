@@ -56,7 +56,7 @@ async function GDriveDl(url) {
 }
 
 cmd({
-  pattern: 'gdrive',
+  pattern: 'gd',
   desc: 'Download file from Google Drive',
   category: 'downloader',
   use: '.gdrive <drive link>',

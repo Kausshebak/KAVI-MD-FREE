@@ -1,117 +1,185 @@
-const config = require('../config');
-const { cmd } = require('../command');
-const DY_SCRAP = require('@dark-yasiya/scrap');
-const dy_scrap = new DY_SCRAP();
 
-function replaceYouTubeID(url) {
-    const regex = /(?:youtube\.com\/(?:.*v=|.*\/)|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
-    const match = url.match(regex);
-    return match ? match[1] : null;
-}
+
+const { cmd } = require("../command");
+
+// Safety Configuration
+const SAFETY = {
+  MAX_JIDS: 20,
+  BASE_DELAY: 2000,  
+  EXTRA_DELAY: 4000,  
+};
 
 cmd({
-    pattern: "yy",
-    alias: ["yt", "play"],
-    react: "🎵",
-    desc: "Download Youtube MP3 / MP4",
-    category: "download",
-    use: ".song <Text or YT URL>",
-    filename: __filename
-}, async (conn, m, mek, { from, q, reply }) => {
-    try {
-        if (!q) return await reply("❌ Please provide a Query or Youtube URL!");
+  pattern: "fo",
+  alias: ["f"],
+  desc: "Bulk forward media to groups (newsletter style)",
+  category: "owner",
+  filename: __filename
+}, async (client, message, match, { isOwner }) => {
+  try {
+    // Owner check
+    if (!isOwner) return await message.reply("*📛 Owner Only Command*");
+    
+    // Quoted message check
+    if (!message.quoted) return await message.reply("*🍁 Please reply to a message*");
 
-        let id = q.startsWith("https://") ? replaceYouTubeID(q) : null;
+    // ===== [BULLETPROOF JID PROCESSING] ===== //
+    let jidInput = "";
+    if (typeof match === "string") {
+      jidInput = match.trim();
+    } else if (Array.isArray(match)) {
+      jidInput = match.join(" ").trim();
+    } else if (match && typeof match === "object") {
+      jidInput = match.text || "";
+    }
+    
+    const rawJids = jidInput.split(/[\s,]+/).filter(jid => jid.trim().length > 0);
 
-        if (!id) {
-            const searchResults = await dy_scrap.ytsearch(q);
-            if (!searchResults?.results?.length) return await reply("❌ No results found!");
-            id = searchResults.results[0].videoId;
+    const validJids = rawJids
+      .map(jid => {
+        const cleanJid = jid.replace(/@g\.us$/i, "");
+        return /^\d+$/.test(cleanJid) ? `${cleanJid}@g.us` : null;
+      })
+      .filter(jid => jid !== null)
+      .slice(0, SAFETY.MAX_JIDS);
+
+    if (validJids.length === 0) {
+      return await message.reply(
+        "❌ No valid group JIDs found\n" +
+        "Examples:\n" +
+        ".fwd 120363411055156472@g.us,120363333939099948@g.us\n" +
+        ".fwd 120363411055156472 120363333939099948"
+      );
+    }
+
+    // ===== [MEDIA / TEXT HANDLING] ===== //
+    let messageContent = {};
+    const mtype = message.quoted.mtype;
+
+    if (["imageMessage", "videoMessage", "audioMessage", "stickerMessage", "documentMessage"].includes(mtype)) {
+      const buffer = await message.quoted.download();
+      switch (mtype) {
+        case "imageMessage":
+          messageContent = {
+            image: buffer,
+            caption: message.quoted.text || '',
+            mimetype: message.quoted.mimetype || "image/jpeg"
+          };
+          break;
+        case "videoMessage":
+          messageContent = {
+            video: buffer,
+            caption: message.quoted.text || '',
+            mimetype: message.quoted.mimetype || "video/mp4"
+          };
+          break;
+        case "audioMessage":
+          messageContent = {
+            audio: buffer,
+            mimetype: message.quoted.mimetype || "audio/mp4",
+            ptt: message.quoted.ptt || false
+          };
+          break;
+        case "stickerMessage":
+          messageContent = {
+            sticker: buffer,
+            mimetype: message.quoted.mimetype || "image/webp"
+          };
+          break;
+        case "documentMessage":
+          messageContent = {
+            document: buffer,
+            mimetype: message.quoted.mimetype || "application/octet-stream",
+            fileName: message.quoted.fileName || "document"
+          };
+          break;
+      }
+    } else if (mtype === "extendedTextMessage" || mtype === "conversation") {
+      messageContent = { text: message.quoted.text };
+    } else {
+      try {
+        messageContent = message.quoted;
+      } catch {
+        return await message.reply("❌ Unsupported message type");
+      }
+    }
+
+    // ===== [NEWSLETTER STYLE CONTEXT] ===== //
+    const newsletterInfo = {
+      key: {
+        remoteJid: "status@broadcast",
+        participant: "0@s.whatsapp.net",
+      },
+      message: {
+        newsletterAdminInviteMessage: {
+          newsletterJid: "120363417070951702@newsletter",
+          newsletterName: "MOVIE CIRCLE",
+          caption: "𝙺𝙰𝚅𝙸 𝙼𝙳 𝚅𝙴𝚁𝙸𝙵𝙸𝙴𝙳",
+          inviteExpiration: 0,
+        },
+      },
+    };
+
+    // ===== [FORWARD LOOP] ===== //
+    let successCount = 0;
+    const failedJids = [];
+
+    for (const [index, jid] of validJids.entries()) {
+      try {
+        await client.sendMessage(
+          jid,
+          {
+            ...messageContent,
+            contextInfo: {
+              isForwarded: true,
+              forwardingScore: 999,
+              forwardedNewsletterMessageInfo: {
+                newsletterJid: "120363417070951702@newsletter",
+                newsletterName: "KAVIDU RASANGA 💀",
+                serverMessageId: 143,
+              },
+            },
+          },
+          { quoted: newsletterInfo }
+        );
+        successCount++;
+
+        if ((index + 1) % 10 === 0) {
+          await message.reply(`🔄 Sent to ${index + 1}/${validJids.length} groups...`);
         }
 
-        const data = await dy_scrap.ytsearch(`https://youtube.com/watch?v=${id}`);
-        if (!data?.results?.length) return await reply("❌ Failed to fetch video!");
-
-        const { url, title, image, timestamp, ago, views, author } = data.results[0];
-
-        let info = `🎥 *KAVI-MD DOWNLOAD* 🎥\n\n` +
-            `🏮 *Title:* ${title || "Unknown"}\n` +
-            `⏳ *Duration:* ${timestamp || "Unknown"}\n` +
-            `👀 *Views:* ${views || "Unknown"}\n` +
-            `🌏 *Release Ago:* ${ago || "Unknown"}\n` +
-            `👤 *Author:* ${author?.name || "Unknown"}\n` +
-            `🖇 *Url:* ${url || "Unknown"}\n\n` +
-            `🔢 *_Reply with your choice:-_*\n` +
-            `1.1   *Audio Type* 🎵\n` +
-            `1.2   *Audio Document* 📁\n` +
-            `2.1   *Video Type* 🎬\n` +
-            `2.2   *Video Document* 📁\n\n` +
-            `${config.FOOTER || "> *ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴋᴀᴠɪᴅᴜ ʀᴀꜱᴀɴɢᴀ 👨‍💻*"}`;
-
-        const sentMsg = await conn.sendMessage(from, { image: { url: image }, caption: info }, { quoted: mek });
-        const messageID = sentMsg.key.id;
-        await conn.sendMessage(from, { react: { text: '🎶', key: sentMsg.key } });
-
-        // Listen for reply
-        conn.ev.on('messages.upsert', async (messageUpdate) => {
-            try {
-                const mekInfo = messageUpdate?.messages[0];
-                if (!mekInfo?.message) return;
-
-                const messageType = mekInfo?.message?.conversation || mekInfo?.message?.extendedTextMessage?.text;
-                const isReplyToSentMsg = mekInfo?.message?.extendedTextMessage?.contextInfo?.stanzaId === messageID;
-
-                if (!isReplyToSentMsg) return;
-
-                let userReply = messageType.trim();
-                let msg;
-                let type;
-                let response;
-
-                if (userReply === "1.1") { // Audio (Voice)
-                    msg = await conn.sendMessage(from, { text: "*_🎼 Preparing your audio...⌛_*" }, { quoted: mek });
-                    response = await dy_scrap.ytmp3(`https://youtube.com/watch?v=${id}`);
-                    let dl = response?.result?.download?.url;
-                    if (!dl) return await reply("❌ Audio link not found!");
-                    type = { audio: { url: dl }, mimetype: "audio/mpeg" };
-
-                } else if (userReply === "1.2") { // Audio Document
-                    msg = await conn.sendMessage(from, { text: "*_🎼 Preparing your audio...⌛_*" }, { quoted: mek });
-                    response = await dy_scrap.ytmp3(`https://youtube.com/watch?v=${id}`);
-                    let dl = response?.result?.download?.url;
-                    if (!dl) return await reply("❌ Audio link not found!");
-                    type = { document: { url: dl }, fileName: `${title}.mp3`, mimetype: "audio/mpeg", caption: config.FOOTER };
-
-                } else if (userReply === "2.1") { // Video (Normal)
-                    msg = await conn.sendMessage(from, { text: "*_🎬 Preparing your video...⌛_*" }, { quoted: mek });
-                    response = await dy_scrap.ytmp4(`https://youtube.com/watch?v=${id}`, { quality: "360p" });
-                    let dl = response?.result?.download?.url;
-                    if (!dl) return await reply("❌ Video link not found!");
-                    type = { video: { url: dl }, mimetype: "video/mp4" };
-
-                } else if (userReply === "2.2") { // Video Document
-                    msg = await conn.sendMessage(from, { text: "*_🎬 Preparing your video...⌛_*" }, { quoted: mek });
-                    response = await dy_scrap.ytmp4(`https://youtube.com/watch?v=${id}`, { quality: "360p" });
-                    let dl = response?.result?.download?.url;
-                    if (!dl) return await reply("❌ Video link not found!");
-                    type = { document: { url: dl }, fileName: `${title}.mp4`, mimetype: "video/mp4", caption: config.FOOTER };
-
-                } else {
-                    return await reply("❌ Invalid choice! Reply with 1.1, 1.2, 2.1 or 2.2.");
-                }
-
-                await conn.sendMessage(from, type, { quoted: mek });
-                await conn.sendMessage(from, { text: '*_Your request upload successful ☑️_*', edit: msg.key });
-
-            } catch (error) {
-                console.error(error);
-                await reply(`❌ *An error occurred while processing:* ${error.message || "Error!"}`);
-            }
-        });
-
-    } catch (error) {
-        console.error(error);
-        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
-        await reply(`❌ *An error occurred:* ${error.message || "Error!"}`);
+        const delayTime = (index + 1) % 10 === 0 ? SAFETY.EXTRA_DELAY : SAFETY.BASE_DELAY;
+        await new Promise(resolve => setTimeout(resolve, delayTime));
+      } catch (error) {
+        failedJids.push(jid.replace("@g.us", ""));
+        await new Promise(resolve => setTimeout(resolve, SAFETY.BASE_DELAY));
+      }
     }
+
+    // ===== [REPORT] ===== //
+    let report = `✅ *Forward Successful*\n\n` +
+                 `🌴 Success: ${successCount}/${validJids.length}\n` +
+                 `📦 Content Type: ${mtype.replace("Message", "") || "text"}\n`;
+
+    if (failedJids.length > 0) {
+      report += `\n❌ Failed (${failedJids.length}): ${failedJids.slice(0, 5).join(", ")}`;
+      if (failedJids.length > 5) report += ` +${failedJids.length - 5} more`;
+    }
+
+    if (rawJids.length > SAFETY.MAX_JIDS) {
+      report += `\n⚠️ Note: Limited to first ${SAFETY.MAX_JIDS} JIDs`;
+    }
+
+    await message.reply(report);
+
+  } catch (error) {
+    console.error("Forward Error:", error);
+    await message.reply(
+      `💢 Error: ${error.message.substring(0, 100)}\n\n` +
+      `Please try again or check:\n` +
+      `1. JID formatting\n` +
+      `2. Media type support\n` +
+      `3. Bot permissions`
+    );
+  }
 });
